@@ -14,6 +14,10 @@ public class Server {
 	HashMap<String, ClientThread> userMap = new HashMap<>();
 	HashMap<String, ArrayList<String>> groups = new HashMap<>();
 
+	private ClientThread player1 = null;
+	private ClientThread player2 = null;
+	private int playerCount = 0;
+
 	TheServer server;
 	private Consumer<Serializable> callback;
 
@@ -34,8 +38,29 @@ public class Server {
 					clients.add(c);
 					c.start();
 					count++;
-				}
 
+					synchronized (Server.class) {
+						playerCount++;
+						if (playerCount == 1) {
+							player1 = c;
+							callback.accept("Player 1 connected. Waiting for Player 2...");
+						} else if (playerCount == 2) {
+							player2 = c;
+							player1.opponent = player2;
+							player2.opponent = player1;
+
+							Message redMsg = new Message("game_start");
+							redMsg.setText("red");
+							player1.sendToSelf(redMsg);
+
+							Message blackMsg = new Message("game_start");
+							blackMsg.setText("black");
+							player2.sendToSelf(blackMsg);
+
+							callback.accept("Both players connected. Game started!");
+						}
+					}
+				}
 			} catch (Exception e) {
 				callback.accept("Server socket did not launch");
 				e.printStackTrace();
@@ -50,6 +75,16 @@ public class Server {
 		ObjectInputStream in;
 		ObjectOutputStream out;
 		String username;
+		ClientThread opponent;
+
+		public synchronized void sendToSelf(Message msg) {
+			try {
+				out.writeObject(msg);
+				out.reset();
+			} catch (Exception e) {
+				e.printStackTrace();
+			}
+		}
 
 		ClientThread(Socket s, int count) {
 			this.connection = s;
@@ -223,6 +258,11 @@ public class Server {
 									}
 								}
 							}
+						}
+					} else if (msg.getType().equals("move")) {
+						callback.accept("Move from " + (username != null ? username : "client #" + count));
+						if (opponent != null) {
+							opponent.sendToSelf(msg);
 						}
 					}
 
